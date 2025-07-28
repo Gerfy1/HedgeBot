@@ -31,8 +31,9 @@ function configSocket(state: any, retryCache: any, version: any, messagesCache: 
         
         // ✅ REDUZIR CARGA DE REDE
         shouldSyncHistoryMessage: () => false,
-        shouldIgnoreJid: (jid: string) => {
-            return jid.includes('broadcast') || jid.includes('status')
+        shouldIgnoreJid: (jid: string | undefined) => {
+            if (!jid) return false;
+            return jid.includes('broadcast') || jid.includes('status');
         },
         
         // ✅ CONFIGURAÇÕES DE BROWSER CORRIGIDAS
@@ -248,9 +249,10 @@ export default async function connect(){
                         const groups = await client.groupFetchAllParticipating()
                         const groupCount = Object.keys(groups).length
                         
-                        if (groupCount > 20) {
+                        if (groupCount > 50) {
                             console.log(`⚠️ Muitos grupos (${groupCount}), pulando sincronização completa`)
                         } else {
+                            console.log(`🔄 Sincronizando ${groupCount} grupos...`)
                             await syncGroupsOnStart(client)
                         }
                     } catch (error: any) {
