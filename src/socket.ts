@@ -20,7 +20,7 @@ function configSocket(state: any, retryCache: any, version: any, messagesCache: 
     
     return {
         auth: state,
-        version,
+        version: [2, 3000, 1025091846],
         
         // ✅ CONFIGURAÇÕES DE CONECTIVIDADE PARA ORACLE CLOUD
         connectTimeoutMs: 120000,

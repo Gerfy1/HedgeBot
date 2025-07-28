@@ -3,7 +3,7 @@ import path from "node:path";
 import fs from "fs-extra";
 
 export class TwitchService {
-    private pathJSON = path.resolve("storage/twitch.json")
+    private pathJSON = path.resolve("./storage/twitch.json")
 
     private defaultConfig: TwitchConfig = {
         enabled: false,
@@ -77,5 +77,4 @@ export class TwitchService {
         config.check_interval = minutes
         this.updateConfig(config)
     }
-
 }

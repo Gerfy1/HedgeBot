@@ -4,7 +4,7 @@ import { GroupController } from "../controllers/group.controller.js";
 import { Bot } from "../interfaces/bot.interface.js";
 import * as twitchUtil from "../utils/twitch.util.js";
 import * as waUtil from "../utils/whatsapp.util.js";
-import { buildText } from "../utils/general.util";
+import { buildText } from "../utils/general.util.js";
 
 let monitorInterval: NodeJS.Timeout | null = null;
 
@@ -16,10 +16,13 @@ export function startTwitchMonitor(client: WASocket, botInfo: Bot) {
     const twitchController = new TwitchController();
     const config = twitchController.getConfig();
 
-    if (!config.enabled || !config.streamer_name || !config.client_id || !config.client_secret){
-        console.log('⚠️ Monitor Twitch não iniciado - configuração incompleta')
+    if (!config.enabled || !config.streamer_name || !config.client_id || !config.client_secret || 
+        config.client_id === 'xv4ygokw13u0yoebgruzkn1qawsz5w') {
+        console.log('⚠️ Monitor Twitch desativado - configuração incompleta ou inválida')
+        twitchController.setEnabled(false); // Force disabled until properly configured
         return
     }
+
 
     if (monitorInterval) {
         clearInterval(monitorInterval);
