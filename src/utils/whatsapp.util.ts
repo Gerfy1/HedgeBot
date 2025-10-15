@@ -71,8 +71,10 @@ export function deleteMessage(client: WASocket, message : WAMessage, deleteQuote
     return client.sendMessage(chatId, {delete: deletedMessage})
 }
 
+// ❌ REMOVIDO: ACKs causam banimentos no Baileys v7+ (não envie confirmações de leitura)
 export function readMessage(client: WASocket, chatId: string, sender: string, messageId: string){
-    return client.sendReceipt(chatId, sender, [messageId], 'read')
+    // return client.sendReceipt(chatId, sender, [messageId], 'read')
+    return Promise.resolve()
 }
 
 export function updateProfilePic(client: WASocket, chatId: string , image: Buffer){
@@ -290,7 +292,7 @@ export function getMessageFromCache(messageId: string, messageCache: NodeCache){
     return message
 }
 
-export async function formatWAMessage(m: WAMessage, group: Group|null, hostId: string){
+export async function formatWAMessage(m: WAMessage, group: Group|null, hostId: string, client?: WASocket){
     if (!m.message) return
 
     const type = getContentType(m.message)
@@ -302,7 +304,7 @@ export async function formatWAMessage(m: WAMessage, group: Group|null, hostId: s
     const botAdmins = await userController.getAdmins()
     const contextInfo : proto.IContextInfo | undefined  = (typeof m.message[type] != "string" && m.message[type] && "contextInfo" in m.message[type]) ? m.message[type].contextInfo as proto.IContextInfo: undefined
     const isQuoted = (contextInfo?.quotedMessage) ? true : false
-    const sender = (m.key.fromMe) ? hostId : m.key.participant || m.key.remoteJid
+    let sender = (m.key.fromMe) ? hostId : m.key.participant || m.key.remoteJid
     const pushName = m.pushName
     const body =  m.message.conversation ||  m.message.extendedTextMessage?.text || undefined
     const caption = (typeof m.message[type] != "string" && m.message[type] && "caption" in m.message[type]) ? m.message[type].caption as string | null: undefined
@@ -312,6 +314,36 @@ export async function formatWAMessage(m: WAMessage, group: Group|null, hostId: s
     const message_id = m.key.id
     const t = m.messageTimestamp as number
     const chat_id = m.key.remoteJid
+    
+    // ✅ CONVERSÃO LID/PN: Tenta encontrar o ID correto no banco
+    if (isGroupMsg && group && sender && client) {
+        const participants = await groupController.getParticipantsIds(group.id)
+        
+        // Se o sender não está no banco, tenta converter PN→LID
+        if (!participants.includes(sender)) {
+            try {
+                const store = client.signalRepository?.lidMapping
+                if (store) {
+                    const lid = await store.getLIDForPN(sender)
+                    if (lid && participants.includes(lid)) {
+                        sender = lid // Atualiza o sender para o LID correto
+                    } else {
+                        // Tenta conversão reversa: busca se algum participante no DB tem PN correspondente
+                        for (const participantId of participants) {
+                            const pn = await store.getPNForLID(participantId)
+                            if (pn === sender) {
+                                sender = participantId
+                                break
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                // Erro silencioso na conversão LID
+            }
+        }
+    }
+    
     const isGroupAdmin = (sender && group) ? await groupController.isParticipantAdmin(group.id, sender) : false
 
     if (!message_id || !t || !sender || !chat_id ) return

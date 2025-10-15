@@ -21,7 +21,7 @@ export async function messageReceived (client: WASocket, messages : {messages: W
                 const idChat = messages.messages[0].key.remoteJid
                 const isGroupMsg = idChat?.includes("@g.us")
                 const group = (isGroupMsg && idChat) ? await groupController.getGroup(idChat) : null
-                let message = await formatWAMessage(messages.messages[0], group, botInfo.host_number)
+                let message = await formatWAMessage(messages.messages[0], group, botInfo.host_number, client)
 
                 if (message) {
                     await userController.registerUser(message.sender, message.pushname)

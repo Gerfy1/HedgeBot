@@ -30,7 +30,8 @@ export async function useNeDBAuthState() : Promise<{ state: AuthenticationState,
                             let value = await read(`${type}-${id}`)
 
                             if (type === "app-state-sync-key" && value) {
-                                value = WAProto.Message.AppStateSyncKeyData.fromObject(value)
+                                // ✅ Baileys v7+: usar .create() ao invés de .fromObject()
+                                value = WAProto.Message.AppStateSyncKeyData.create(value)
                             }
 
                             data[id] = value
@@ -51,7 +52,7 @@ export async function useNeDBAuthState() : Promise<{ state: AuthenticationState,
                     await Promise.all(tasks)
                 }
             }
-        },
+        } as AuthenticationState,
         saveCreds: async () => {
             await write(creds, "creds")
         }

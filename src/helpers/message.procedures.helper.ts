@@ -79,7 +79,8 @@ export async function sendPrivateWelcome(client: WASocket, botInfo: Bot, message
 }
 
 export async function readUserMessage(client: WASocket, message: Message){
-    await waUtil.readMessage(client, message.chat_id, message.sender, message.message_id)
+    // ❌ REMOVIDO: ACKs causam banimentos no Baileys v7+
+    // await waUtil.readMessage(client, message.chat_id, message.sender, message.message_id)
 }
 
 export async function updateUserName(message: Message){

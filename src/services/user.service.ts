@@ -24,8 +24,13 @@ export class UserService {
     public async registerUser(userId: string, name?: string|null){
         const user = await this.getUser(userId)
 
-        if (user || !userId.endsWith('@s.whatsapp.net')) return 
-    
+        // ✅ Aceita tanto LID (@lid) quanto PN (@s.whatsapp.net)
+        const isValidUserId = userId.endsWith('@s.whatsapp.net') || userId.endsWith('@lid')
+        
+        if (user || !isValidUserId) {
+            return 
+        }
+        
         const userData : User = {
             ...this.defaultUser,
             id: userId,

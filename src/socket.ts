@@ -84,10 +84,10 @@ const RECONNECT_DELAYS = [5000, 15000, 60000]  // Delays maiores
 let isReconnecting = false
 let lastDisconnectTime = 0
 
-// ✅ CONTROLE DE RATE LIMITING AGRESSIVO
+// ✅ CONTROLE DE RATE LIMITING (Ajustado para uso normal)
 const messageQueue = new Map()
-const MESSAGE_DELAY = 2000 // 2 segundos entre mensagens
-const MAX_MESSAGES_PER_MINUTE = 15  // Reduzido para Oracle Cloud
+const MESSAGE_DELAY = 500 // 500ms entre mensagens (mais responsivo)
+const MAX_MESSAGES_PER_MINUTE = 100  // Aumentado para 100 mensagens/minuto
 const messageTimestamps: number[] = []
 
 // ✅ DEBOUNCE PARA MENSAGENS
@@ -249,7 +249,7 @@ export default async function connect(){
                         const groups = await client.groupFetchAllParticipating()
                         const groupCount = Object.keys(groups).length
                         
-                        if (groupCount > 50) {
+                        if (groupCount > 55) {
                             console.log(`⚠️ Muitos grupos (${groupCount}), pulando sincronização completa`)
                         } else {
                             console.log(`🔄 Sincronizando ${groupCount} grupos...`)
@@ -275,6 +275,13 @@ export default async function connect(){
                 await saveCreds()
             }
 
+            // ✅ LID MAPPING (Baileys v7+) - Mapeia Phone Numbers para LIDs
+            if (events['lid-mapping.update']){
+                const lidMapping = events['lid-mapping.update']
+                console.log('🆔 Novo mapeamento LID/PN recebido:', Object.keys(lidMapping).length, 'entradas')
+                // O mapeamento é automaticamente salvo pelo auth state
+            }
+
             // ✅ PROCESSAR MENSAGENS COM CONTROLE AGRESSIVO
             if (events['messages.upsert'] && isBotReady){
                 const messageEvent = events['messages.upsert']
@@ -283,20 +290,22 @@ export default async function connect(){
                     // Processar apenas uma mensagem por vez
                     const msg = messageEvent.messages[0]
                     
-                    // Verificar rate limit
+                    // Verificar rate limit (proteção anti-ban)
                     const now = Date.now()
                     while (messageTimestamps.length > 0 && now - messageTimestamps[0] > 60000) {
                         messageTimestamps.shift()
                     }
                     
                     if (messageTimestamps.length >= MAX_MESSAGES_PER_MINUTE) {
-                        console.log('⚠️ Rate limit atingido, ignorando mensagem')
-                        return
+                        console.log(`⚠️ Rate limit de segurança ativado (${messageTimestamps.length}/${MAX_MESSAGES_PER_MINUTE} msgs/min) - aguardando...`)
+                        // Aguardar 2 segundos antes de processar
+                        await new Promise(resolve => setTimeout(resolve, 2000))
                     }
                     
                     messageTimestamps.push(now)
                     
                     try {
+                        // Delay reduzido para melhor responsividade
                         await new Promise(resolve => setTimeout(resolve, MESSAGE_DELAY))
                         await messageReceived(client, { messages: [msg], type: 'notify' }, botInfo, messagesCache)
                     } catch (error: any) {

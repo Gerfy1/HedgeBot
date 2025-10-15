@@ -461,7 +461,8 @@ export async function listablockCommand(client: WASocket, botInfo: Bot, message:
 
     for (let userId of blockedUsers) {
         const userPosition = blockedUsers.indexOf(userId) + 1
-        replyText += buildText(adminCommands.listablock.msgs.reply_item, userPosition, waUtil.removeWhatsappSuffix(userId))
+        const userIdString = userId || ''
+        replyText += buildText(adminCommands.listablock.msgs.reply_item, userPosition, waUtil.removeWhatsappSuffix(userIdString))
     }
 
     await waUtil.replyText(client, message.chat_id, replyText, message.wa_message, {expiration: message.expiration})
@@ -505,7 +506,11 @@ export async function desbloquearCommand(client: WASocket, botInfo: Bot, message
     } else if(message.mentioned.length) {
         targetUserId = message.mentioned[0]
     } else if(message.args.length == 1 && message.args[0].length <= 3 && Number(message.args[0])) {
-        targetUserId = blockedUsers[Number(message.args[0]) - 1]
+        const blockedUser = blockedUsers[Number(message.args[0]) - 1]
+        if (!blockedUser) {
+            throw new Error(messageErrorCommandUsage(botInfo.prefix, message))
+        }
+        targetUserId = blockedUser
     } else if (message.args.length) {
         targetUserId =  waUtil.addWhatsappSuffix(message.text_command)
     } else {

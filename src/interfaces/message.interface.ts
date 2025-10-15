@@ -11,7 +11,7 @@ export interface MessageOptions {
 
 export interface Message {
     message_id: string,
-    sender: string,
+    sender: string, // ⚠️ Pode ser LID ou PN (Baileys v7+). Use remoteJidAlt/participantAlt se disponível
     type: MessageTypes,
     t : number,
     chat_id: string,

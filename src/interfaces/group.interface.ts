@@ -1,9 +1,9 @@
 export interface Group {
-    id: string
+    id: string // ID do grupo (mantém compatibilidade)
     name : string
     description?: string
     commands_executed: number
-    owner?: string
+    owner?: string // ⚠️ Pode ser LID ou PN (Baileys v7+)
     restricted?: boolean
     expiration?: number,
     muted: boolean,
@@ -49,7 +49,7 @@ export interface ParticipantAntiFlood {
 
 export interface Participant{
     group_id : string,
-    user_id : string,
+    user_id : string, // ⚠️ Pode ser LID ou PN (Baileys v7+)
     admin: boolean,
     registered_since: string,
     commands: number,

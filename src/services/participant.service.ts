@@ -7,6 +7,11 @@ import { GroupMetadata } from "baileys";
 
 const db = new DataStore<Participant>({filename : './storage/participants.groups.db', autoload: true})
 
+// ✅ Cache em memória para evitar leituras desatualizadas durante sincronização
+let participantsCache: Map<string, Participant[]> = new Map()
+let lastCacheUpdate = 0
+const CACHE_TTL = 1000 // 1 segundo
+
 export class ParticipantService {
     private defaultParticipant : Participant = {
         group_id : '',
@@ -56,6 +61,9 @@ export class ParticipantService {
 
         if (isGroupParticipant) return
         
+        // ✅ Invalida cache ao adicionar participante
+        participantsCache.delete(groupId)
+        
         const participant : Participant = {
             ...this.defaultParticipant,
             group_id : groupId,
@@ -78,6 +86,8 @@ export class ParticipantService {
 
     public async removeParticipant(groupId: string, userId: string){
         await db.removeAsync({group_id: groupId, user_id: userId}, {})
+        // ✅ Invalida cache ao remover participante
+        participantsCache.delete(groupId)
     }
 
     public async removeParticipants(groupId: string){
@@ -86,6 +96,8 @@ export class ParticipantService {
 
     public async setAdmin(groupId: string, userId: string, status: boolean){
         await db.updateAsync({group_id : groupId, user_id: userId}, { $set: { admin: status }})
+        // ✅ Invalida cache ao alterar admin
+        participantsCache.delete(groupId)
     }
 
     public async getParticipantFromGroup(groupId: string, userId: string){
@@ -104,7 +116,18 @@ export class ParticipantService {
     }
 
     public async getParticipantsIdsFromGroup(groupId: string){
+        // ✅ Usa cache se disponível e recente
+        const now = Date.now()
+        if (participantsCache.has(groupId) && (now - lastCacheUpdate) < CACHE_TTL) {
+            const cached = participantsCache.get(groupId)!
+            return cached.map(p => p.user_id)
+        }
+        
+        // Busca do banco e atualiza cache
         const participants = await this.getParticipantsFromGroup(groupId)
+        participantsCache.set(groupId, participants)
+        lastCacheUpdate = now
+        
         return participants.map(participant => participant.user_id)
     }
 
@@ -129,6 +152,13 @@ export class ParticipantService {
     }
 
     public async incrementParticipantActivity(groupId: string, userId: string, type: MessageTypes, isCommand: boolean){
+        // ✅ Verifica se o participante existe no banco ANTES de incrementar
+        const exists = await this.isGroupParticipant(groupId, userId)
+        
+        if (!exists) {
+            return // Participante não existe, não pode incrementar
+        }
+        
         let incrementedUser : {
             msgs: number,
             commands?: number,

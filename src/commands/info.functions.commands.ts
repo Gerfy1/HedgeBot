@@ -99,7 +99,6 @@ export async function menuCommand(client: WASocket, botInfo: Bot, message: Messa
     
     const userData = await new UserController().getUser(message.sender)
 
-
     if (!userData) {
         throw new Error(infoCommands.menu.msgs.error_user_not_found)
     }
