@@ -20,7 +20,25 @@ export async function messageReceived (client: WASocket, messages : {messages: W
                 const groupController = new GroupController()
                 const idChat = messages.messages[0].key.remoteJid
                 const isGroupMsg = idChat?.includes("@g.us")
-                const group = (isGroupMsg && idChat) ? await groupController.getGroup(idChat) : null
+                
+                // ✅ Se for grupo, garantir que ele esteja registrado
+                let group = null
+                if (isGroupMsg && idChat) {
+                    group = await groupController.getGroup(idChat)
+                    
+                    // ✅ Se o grupo não existir, registrar automaticamente
+                    if (!group) {
+                        try {
+                            const groupMetadata = await client.groupMetadata(idChat)
+                            await groupController.registerGroup(groupMetadata)
+                            group = await groupController.getGroup(idChat)
+                            console.log(`✅ Grupo registrado automaticamente: ${groupMetadata.subject}`)
+                        } catch (error: any) {
+                            console.error(`⚠️ Erro ao registrar grupo ${idChat}:`, error?.message || error)
+                        }
+                    }
+                }
+                
                 let message = await formatWAMessage(messages.messages[0], group, botInfo.host_number, client)
 
                 if (message) {
@@ -36,6 +54,8 @@ export async function messageReceived (client: WASocket, messages : {messages: W
                         if (needCallCommand) {
                             await commandInvoker(client, botInfo, message, group)
                         }
+                    } else {
+                        console.log(`⚠️ Mensagem de grupo ${idChat} ignorada - grupo não registrado`)
                     }
                 }
 

@@ -7,6 +7,7 @@ import { addedOnGroup } from './events/group-added.event.js'
 import { groupParticipantsUpdated } from './events/group-participants-updated.event.js'
 import { partialGroupUpdate } from './events/group-partial-update.event.js'
 import { syncGroupsOnStart } from './helpers/groups.sync.helper.js'
+import { partialSyncGroups } from './helpers/partial.sync.helper.js'
 import { executeEventQueue, queueEvent } from './helpers/events.queue.helper.js'
 import botTexts from './helpers/bot.texts.helper.js'
 import { askQuestion, colorText } from './utils/general.util.js'
@@ -14,6 +15,7 @@ import { useNeDBAuthState } from './helpers/session.auth.helper.js'
 import { startTwitchMonitor } from './helpers/twitch.monitor.helper.js'
 import { Boom } from '@hapi/boom'
 import pino from 'pino'
+import fs from 'fs'
 
 function configSocket(state: any, retryCache: any, version: any, messagesCache: any): any {
     const browserInfo: [string, string, string] = ['HedgeBot-Server', 'Chrome', '120.0.0.0']
@@ -51,7 +53,7 @@ function configSocket(state: any, retryCache: any, version: any, messagesCache: 
                 }
             }
         }),
-             msgRetryCounterCache: retryCache,
+        msgRetryCounterCache: retryCache,
         msgRetryCounterMap: messagesCache,
         markOnlineOnConnect: false,
         syncFullHistory: false,
@@ -67,7 +69,7 @@ function configSocket(state: any, retryCache: any, version: any, messagesCache: 
                 limit: 100
             }
         }
-    } as any // ✅ Forçar tipagem se necessário
+    } as any
 }
 
 //Cache de tentativa de envios  
@@ -79,15 +81,15 @@ const messagesCache = new NodeCache({ stdTTL: 300, useClones: false, checkperiod
 
 // ✅ SISTEMA DE RECONEXÃO INTELIGENTE PARA ORACLE CLOUD
 let reconnectAttempts = 0
-const MAX_RECONNECT_ATTEMPTS = 3  // Reduzido para Oracle Cloud
-const RECONNECT_DELAYS = [5000, 15000, 60000]  // Delays maiores
+const MAX_RECONNECT_ATTEMPTS = 3
+const RECONNECT_DELAYS = [5000, 15000, 60000]
 let isReconnecting = false
 let lastDisconnectTime = 0
 
-// ✅ CONTROLE DE RATE LIMITING (Ajustado para uso normal)
+// ✅ CONTROLE DE RATE LIMITING
 const messageQueue = new Map()
-const MESSAGE_DELAY = 500 // 500ms entre mensagens (mais responsivo)
-const MAX_MESSAGES_PER_MINUTE = 100  // Aumentado para 100 mensagens/minuto
+const MESSAGE_DELAY = 500
+const MAX_MESSAGES_PER_MINUTE = 100
 const messageTimestamps: number[] = []
 
 // ✅ DEBOUNCE PARA MENSAGENS
@@ -100,24 +102,21 @@ function forceGarbageCollection() {
         console.log('🧹 Garbage collection executado')
     }
     
-    // Limpar caches
     retryCache.flushAll()
     if (messageQueue.size > 20) {
         messageQueue.clear()
     }
     
-    // Limpar timestamps antigos
     const now = Date.now()
     while (messageTimestamps.length > 0 && now - messageTimestamps[0] > 120000) {
         messageTimestamps.shift()
     }
 }
 
-// ✅ FUNÇÃO DE RECONEXÃO OTIMIZADA PARA ORACLE CLOUD
-function scheduleReconnect(fastReconnect = false) {
+// ✅ FUNÇÃO DE RECONEXÃO OTIMIZADA - CORRIGIDA PARA ES6
+async function scheduleReconnect(fastReconnect = false) {
     const now = Date.now()
     
-    // Evitar reconexões muito frequentes
     if (now - lastDisconnectTime < 10000) {
         console.log('⏳ Aguardando 10s antes de reconectar...')
         setTimeout(() => scheduleReconnect(fastReconnect), 10000)
@@ -134,10 +133,11 @@ function scheduleReconnect(fastReconnect = false) {
     if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
         console.log(`❌ Máximo de tentativas atingido. Limpando sessão e reiniciando...`)
         
-        
-        // Limpar sessão automaticamente
-        const fs = require('fs')
+        // ✅ USAR fs IMPORTADO AO INVÉS DE require
         try {
+            if (fs.existsSync('./storage/session.db')) {
+                fs.unlinkSync('./storage/session.db')
+            }
             if (fs.existsSync('./baileys_auth_info')) {
                 fs.rmSync('./baileys_auth_info', { recursive: true, force: true })
             }
@@ -149,17 +149,17 @@ function scheduleReconnect(fastReconnect = false) {
         reconnectAttempts = 0
         setTimeout(() => {
             console.log('🔄 Reiniciando processo...')
-            process.exit(1)  // PM2 vai reiniciar automaticamente
+            process.exit(1)
         }, 5000)
         return
     }
-      isReconnecting = true
+    
+    isReconnecting = true
     
     const delay = RECONNECT_DELAYS[reconnectAttempts] || 60000
     
     console.log(`🔄 Reconectando em ${delay/1000}s (${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`)
     
-    // Forçar limpeza de memória antes de reconectar
     forceGarbageCollection()
     
     setTimeout(() => {
@@ -170,32 +170,6 @@ function scheduleReconnect(fastReconnect = false) {
     }, delay)
 }
 
-// ✅ DEBOUNCE PARA PROCESSAMENTO DE MENSAGENS
-async function processMessageWithDebounce(client: WASocket, msg: any, botInfo: any, messagesCache: NodeCache) {
-    const messageId = msg.key?.id
-    if (!messageId) return
-
-    // Evitar processar mensagem duplicada
-    if (messageProcessingQueue.has(messageId)) {
-        return
-    }
-
-    messageProcessingQueue.set(messageId, true)
-
-    try {
-        // ✅ DELAY PEQUENO PARA EVITAR SPAM
-        await new Promise(resolve => setTimeout(resolve, 50))
-        
-        await messageReceived(client, { messages: [msg], type: 'notify' }, botInfo, messagesCache)
-    } catch (error: any) {
-        console.error(`Erro ao processar mensagem ${messageId}:`, error?.message || error)
-    } finally {
-        // ✅ LIMPAR QUEUE APÓS 5 SEGUNDOS
-        setTimeout(() => {
-            messageProcessingQueue.delete(messageId)
-        }, 5000)
-    }
-}
 export default async function connect(){
     try {
         const { state, saveCreds } = await useNeDBAuthState()
@@ -205,14 +179,12 @@ export default async function connect(){
         let isBotReady = false
         eventsCache.set("events", [])
 
-        //Eventos
         client.ev.process(async(events)=>{
             const botInfo = new BotController().getBot()
 
-            //Status da conexão
             if (events['connection.update']){
                 const connectionState = events['connection.update']
-                const { connection, qr, receivedPendingNotifications, lastDisconnect } = connectionState
+                const { connection, qr, receivedPendingNotifications } = connectionState
 
                 if (!receivedPendingNotifications) {
                     if (qr) {
@@ -244,13 +216,13 @@ export default async function connect(){
                     
                     await connectionOpen(client)
                     
-                    // ✅ PULAR SINCRONIZAÇÃO DE GRUPOS SE HOUVER MUITOS
                     try {
                         const groups = await client.groupFetchAllParticipating()
                         const groupCount = Object.keys(groups).length
                         
-                        if (groupCount > 55) {
-                            console.log(`⚠️ Muitos grupos (${groupCount}), pulando sincronização completa`)
+                        if (groupCount > 60) {
+                            console.log(`⚠️ Muitos grupos (${groupCount}), usando sincronização parcial`)
+                            await partialSyncGroups(client, groups)
                         } else {
                             console.log(`🔄 Sincronizando ${groupCount} grupos...`)
                             await syncGroupsOnStart(client)
@@ -270,42 +242,35 @@ export default async function connect(){
                     console.log(colorText(botTexts.server_started))
                 }
             }
-             // Credenciais
+
             if (events['creds.update']){
                 await saveCreds()
             }
 
-            // ✅ LID MAPPING (Baileys v7+) - Mapeia Phone Numbers para LIDs
             if (events['lid-mapping.update']){
                 const lidMapping = events['lid-mapping.update']
                 console.log('🆔 Novo mapeamento LID/PN recebido:', Object.keys(lidMapping).length, 'entradas')
-                // O mapeamento é automaticamente salvo pelo auth state
             }
 
-            // ✅ PROCESSAR MENSAGENS COM CONTROLE AGRESSIVO
             if (events['messages.upsert'] && isBotReady){
                 const messageEvent = events['messages.upsert']
 
                 if (messageEvent.messages && messageEvent.messages.length > 0) {
-                    // Processar apenas uma mensagem por vez
                     const msg = messageEvent.messages[0]
                     
-                    // Verificar rate limit (proteção anti-ban)
                     const now = Date.now()
                     while (messageTimestamps.length > 0 && now - messageTimestamps[0] > 60000) {
                         messageTimestamps.shift()
                     }
                     
                     if (messageTimestamps.length >= MAX_MESSAGES_PER_MINUTE) {
-                        console.log(`⚠️ Rate limit de segurança ativado (${messageTimestamps.length}/${MAX_MESSAGES_PER_MINUTE} msgs/min) - aguardando...`)
-                        // Aguardar 2 segundos antes de processar
+                        console.log(`⚠️ Rate limit ativado - aguardando...`)
                         await new Promise(resolve => setTimeout(resolve, 2000))
                     }
                     
                     messageTimestamps.push(now)
                     
                     try {
-                        // Delay reduzido para melhor responsividade
                         await new Promise(resolve => setTimeout(resolve, MESSAGE_DELAY))
                         await messageReceived(client, { messages: [msg], type: 'notify' }, botInfo, messagesCache)
                     } catch (error: any) {
@@ -318,7 +283,7 @@ export default async function connect(){
                     }
                 }
             }
-            // Outros eventos simplificados...
+
             if (events['group-participants.update'] && isBotReady){
                 try {
                     await groupParticipantsUpdated(client, events['group-participants.update'], botInfo)
@@ -346,15 +311,12 @@ export default async function connect(){
                 }
             }
         })
-        } catch (error: any) {
+    } catch (error: any) {
         console.error('❌ Erro crítico na conexão:', error?.message || error)
         scheduleReconnect()
     }
 }
 
-
-
-// ✅ MONITOR DE RECURSOS (OPCIONAL)
 setInterval(() => {
     const memUsage = process.memoryUsage()
     const memUsedMB = Math.round(memUsage.rss / 1024 / 1024)
@@ -362,16 +324,14 @@ setInterval(() => {
     if (memUsedMB > 300) {
         console.log(`⚠️ Uso de memória: ${memUsedMB}MB`)
         
-        // Forçar limpeza se muito alto
         if (memUsedMB > 500 && global.gc) {
             console.log('🧹 Executando garbage collection...')
             global.gc()
         }
     }
     
-    // Limpar caches antigos
     if (messageProcessingQueue.size > 100) {
         console.log('🧹 Limpando queue de mensagens...')
         messageProcessingQueue.clear()
     }
-}, 60000) // A cada minuto
+}, 60000)
