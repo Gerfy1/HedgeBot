@@ -172,7 +172,8 @@ export async function addadminCommand(client: WASocket, botInfo: Bot, message: M
         throw new Error(messageErrorCommandUsage(botInfo.prefix, message))
     }
 
-    const userData = await userController.getUser(targetUserId)
+    // ✅ Busca com conversão LID ↔ PN
+    const userData = await waUtil.findUserWithLidPnConversion(client, targetUserId)
 
     if(!userData) {
         throw new Error(adminCommands.addadmin.msgs.error_user_not_found)
@@ -209,7 +210,8 @@ export async function rmadminCommand(client: WASocket, botInfo: Bot, message: Me
         throw new Error(messageErrorCommandUsage(botInfo.prefix, message))
     }
 
-    const userData = await userController.getUser(targetUserId)
+    // ✅ Busca com conversão LID ↔ PN
+    const userData = await waUtil.findUserWithLidPnConversion(client, targetUserId)
 
     if(!userData) {
         throw new Error(adminCommands.rmadmin.msgs.error_user_not_found)
@@ -552,7 +554,8 @@ export async function usuarioCommand(client: WASocket, botInfo: Bot, message: Me
         throw new Error(messageErrorCommandUsage(botInfo.prefix, message))
     }
 
-    let userData = await userController.getUser(targetUserId)
+    // ✅ Busca com conversão LID ↔ PN
+    let userData = await waUtil.findUserWithLidPnConversion(client, targetUserId)
 
     if (!userData) {
         throw new Error(adminCommands.usuario.msgs.error_user_not_found)

@@ -485,3 +485,32 @@ function isAllowedType(type : keyof proto.IMessage){
 
     return allowedTypes.includes(type)
 }
+
+export async function findUserWithLidPnConversion(client: WASocket | undefined, userId: string) {
+    const userController = new UserController()
+    
+    let user = await userController.getUser(userId)
+    if (user) return user
+    
+    if (client) {
+        try {
+            const store = client.signalRepository?.lidMapping
+            if (store) {
+                const lid = await store.getLIDForPN(userId)
+                if (lid) {
+                    user = await userController.getUser(lid)
+                    if (user) return user
+                }
+                
+                const pn = await store.getPNForLID(userId)
+                if (pn) {
+                    user = await userController.getUser(pn)
+                    if (user) return user
+                }
+            }
+        } catch (error) {
+        }
+    }
+    
+    return null
+}

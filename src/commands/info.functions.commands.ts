@@ -1,4 +1,4 @@
-import { WASocket } from "baileys";
+    import { WASocket } from "baileys";
 import { Bot } from "../interfaces/bot.interface.js";
 import { Message } from "../interfaces/message.interface.js";
 import { Group } from "../interfaces/group.interface.js";
@@ -72,7 +72,8 @@ export async function reportarCommand(client: WASocket, botInfo: Bot, message: M
 }
 
 export async function meusdadosCommand(client: WASocket, botInfo: Bot, message: Message, group?: Group){
-    const userData = await new UserController().getUser(message.sender)
+    // ✅ Busca com conversão LID ↔ PN
+    const userData = await waUtil.findUserWithLidPnConversion(client, message.sender)
 
     if (!userData) {
         throw new Error(infoCommands.meusdados.msgs.error_not_found)
@@ -97,7 +98,8 @@ export async function menuCommand(client: WASocket, botInfo: Bot, message: Messa
         return 
     }
     
-    const userData = await new UserController().getUser(message.sender)
+    // ✅ Busca com conversão LID ↔ PN
+    const userData = await waUtil.findUserWithLidPnConversion(client, message.sender)
 
     if (!userData) {
         throw new Error(infoCommands.menu.msgs.error_user_not_found)
