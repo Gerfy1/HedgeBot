@@ -26,7 +26,7 @@ function configSocket(state: any, retryCache: any, version: any, messagesCache: 
         
         // ✅ CONFIGURAÇÕES DE CONECTIVIDADE PARA ORACLE CLOUD
         connectTimeoutMs: 120000,
-        defaultQueryTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 600002,
         keepAliveIntervalMs: 45000,
         retryRequestDelayMs: 3000,
         maxMsgRetryCount: 2,
@@ -220,7 +220,7 @@ export default async function connect(){
                         const groups = await client.groupFetchAllParticipating()
                         const groupCount = Object.keys(groups).length
                         
-                        if (groupCount > 60) {
+                        if (groupCount > 40) {
                             console.log(`⚠️ Muitos grupos (${groupCount}), usando sincronização parcial`)
                             await partialSyncGroups(client, groups)
                         } else {

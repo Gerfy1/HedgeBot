@@ -315,20 +315,17 @@ export async function formatWAMessage(m: WAMessage, group: Group|null, hostId: s
     const t = m.messageTimestamp as number
     const chat_id = m.key.remoteJid
     
-    // ✅ CONVERSÃO LID/PN: Tenta encontrar o ID correto no banco
     if (isGroupMsg && group && sender && client) {
         const participants = await groupController.getParticipantsIds(group.id)
         
-        // Se o sender não está no banco, tenta converter PN→LID
         if (!participants.includes(sender)) {
             try {
                 const store = client.signalRepository?.lidMapping
                 if (store) {
                     const lid = await store.getLIDForPN(sender)
                     if (lid && participants.includes(lid)) {
-                        sender = lid // Atualiza o sender para o LID correto
+                        sender = lid 
                     } else {
-                        // Tenta conversão reversa: busca se algum participante no DB tem PN correspondente
                         for (const participantId of participants) {
                             const pn = await store.getPNForLID(participantId)
                             if (pn === sender) {
@@ -348,6 +345,42 @@ export async function formatWAMessage(m: WAMessage, group: Group|null, hostId: s
 
     if (!message_id || !t || !sender || !chat_id ) return
 
+    let isBotAdmin = false
+    let isBotOwner = false
+    
+    for (const admin of botAdmins) {
+        let isMatch = admin.id === sender
+        
+        if (!isMatch && client) {
+            try {
+                const store = client.signalRepository?.lidMapping
+                if (store) {
+                    const senderLid = await store.getLIDForPN(sender)
+                    if (senderLid && senderLid === admin.id) {
+                        isMatch = true
+                    }
+                    
+                    if (!isMatch) {
+                        const adminPn = await store.getPNForLID(admin.id)
+                        if (adminPn && adminPn === sender) {
+                            isMatch = true
+                        }
+                    }
+                }
+            } catch (error) {
+                
+            }
+        }
+        
+        if (isMatch) {
+            isBotAdmin = true
+            if (admin.owner) {
+                isBotOwner = true
+            }
+            break
+        }
+    }
+
     let formattedMessage : Message = {
         message_id,
         sender,
@@ -365,8 +398,8 @@ export async function formatWAMessage(m: WAMessage, group: Group|null, hostId: s
         isQuoted,
         isGroupMsg,
         isGroupAdmin,
-        isBotAdmin : botAdmins.map(admin => admin.id).includes(sender),
-        isBotOwner: botAdmins.find(admin => admin.owner == true)?.id == sender,
+        isBotAdmin,
+        isBotOwner,
         isBotMessage: m.key.fromMe ?? false,
         isBroadcast: m.key.remoteJid == "status@broadcast",
         isMedia: type != "conversation" && type != "extendedTextMessage",

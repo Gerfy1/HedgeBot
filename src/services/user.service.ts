@@ -61,6 +61,11 @@ export class UserService {
     }
 
     public async setAdmin(userId : string, admin: boolean){
+        // ✅ Garante que o usuário existe antes de promover/rebaixar
+        const user = await this.getUser(userId)
+        if (!user) {
+            await this.registerUser(userId, null)
+        }
         await db.updateAsync({id : userId}, {$set: {admin}})
     }
 
@@ -70,6 +75,11 @@ export class UserService {
     }
 
     public async setOwner(userId : string){
+        // ✅ Garante que o usuário existe antes de promover a owner
+        const user = await this.getUser(userId)
+        if (!user) {
+            await this.registerUser(userId, null)
+        }
         await db.updateAsync({id : userId}, {$set: {owner : true, admin: true}})
     }
 
