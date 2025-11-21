@@ -39,6 +39,7 @@
     "cross-env": "^7.0.3",
     "rimraf": "6.0.1",
     "rollup": "^4.34.8",
+    "sharp": "^0.34.5",
     "tsc-alias": "^1.8.10",
     "tsx": "^4.19.2",
     "typescript": "^5.8.3"
@@ -54,7 +55,7 @@
     "@vitalets/google-translate-api": "^9.2.1",
     "adm-zip": "^0.5.16",
     "axios": "^1.9.0",
-    "baileys": "v7.0.0-rc.5",
+    "baileys": "v7.0.0-rc.8",
     "chalk": "^4.1.0",
     "emoji-mixer": "^1.2.2",
     "fb-downloader-scrapper": "^3.0.0",

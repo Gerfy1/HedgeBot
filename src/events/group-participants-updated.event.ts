@@ -1,4 +1,4 @@
-import {WASocket, ParticipantAction} from 'baileys'
+import {WASocket, ParticipantAction, GroupParticipant} from 'baileys'
 import { buildText, showConsoleError} from '../utils/general.util.js'
 import { Bot } from '../interfaces/bot.interface.js'
 import { Group } from '../interfaces/group.interface.js'
@@ -6,10 +6,12 @@ import { GroupController } from '../controllers/group.controller.js'
 import botTexts from '../helpers/bot.texts.helper.js'
 import { removeParticipant, sendTextWithMentions, removeWhatsappSuffix, addWhatsappSuffix } from '../utils/whatsapp.util.js'
 
-export async function groupParticipantsUpdated (client: WASocket, event: {id: string, author: string, participants: string[], action: ParticipantAction}, botInfo: Bot){
+export async function groupParticipantsUpdated (client: WASocket, event: {id: string, author: string, authorPn?: string, participants: GroupParticipant[], action: ParticipantAction}, botInfo: Bot){
     try{
         const groupController = new GroupController()
-        const isBotUpdate = event.participants[0] == botInfo.host_number
+        // ✅ Baileys RC.8: participants agora é GroupParticipant[] ao invés de string[]
+        const participantIds = event.participants.map(p => typeof p === 'string' ? p : p.id)
+        const isBotUpdate = participantIds[0] == botInfo.host_number
         const group = await groupController.getGroup(event.id)
 
         if (!group) {
@@ -17,34 +19,34 @@ export async function groupParticipantsUpdated (client: WASocket, event: {id: st
         }
 
         if (event.action === 'add') {
-            const isParticipant = await groupController.isParticipant(group.id, event.participants[0])
+            const isParticipant = await groupController.isParticipant(group.id, participantIds[0])
 
             if (isParticipant) return
 
-            if (await isParticipantBlacklisted(client, botInfo, group, event.participants[0])) return
-            else if (await isParticipantFake(client, botInfo, group, event.participants[0])) return
+            if (await isParticipantBlacklisted(client, botInfo, group, participantIds[0])) return
+            else if (await isParticipantFake(client, botInfo, group, participantIds[0])) return
             
-            await sendWelcome(client, group, botInfo, event.participants[0])
-            await groupController.addParticipant(group.id, event.participants[0])
+            await sendWelcome(client, group, botInfo, participantIds[0])
+            await groupController.addParticipant(group.id, participantIds[0])
         } else if (event.action === "remove"){
-            const isParticipant = await groupController.isParticipant(group.id, event.participants[0])
+            const isParticipant = await groupController.isParticipant(group.id, participantIds[0])
 
             if (!isParticipant) return
             
             if (isBotUpdate) await groupController.removeGroup(event.id)
-            else await groupController.removeParticipant(group.id, event.participants[0])
+            else await groupController.removeParticipant(group.id, participantIds[0])
         } else if (event.action === "promote"){
-            const isAdmin = await groupController.isParticipantAdmin(group.id, event.participants[0])
+            const isAdmin = await groupController.isParticipantAdmin(group.id, participantIds[0])
 
             if (isAdmin) return
         
-            await groupController.setAdmin(event.id, event.participants[0], true)
+            await groupController.setAdmin(event.id, participantIds[0], true)
         } else if (event.action === "demote"){
-            const isAdmin = await groupController.isParticipantAdmin(group.id, event.participants[0])
+            const isAdmin = await groupController.isParticipantAdmin(group.id, participantIds[0])
 
             if (!isAdmin) return
             
-            await groupController.setAdmin(event.id, event.participants[0], false)
+            await groupController.setAdmin(event.id, participantIds[0], false)
         }
     } catch(err: any){
         showConsoleError(err, "GROUP-PARTICIPANTS-UPDATE")
