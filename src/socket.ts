@@ -175,46 +175,37 @@ export default async function connect(){
         const { state, saveCreds } = await useNeDBAuthState()
         const { version } = await fetchLatestBaileysVersion()
         const client : WASocket = makeWASocket(configSocket(state, retryCache, version, messagesCache))
-        let connectionType : string | null = null
         let isBotReady = false
         eventsCache.set("events", [])
 
         client.ev.process(async(events)=>{
             const botInfo = new BotController().getBot()
 
-            if (events['connection.update']){
-                const connectionState = events['connection.update']
-                const { connection, qr, receivedPendingNotifications } = connectionState
+            if (events['connection.update']) {
+    const connectionState = events['connection.update']
+    const { connection, qr, receivedPendingNotifications } = connectionState
 
-                if (!receivedPendingNotifications) {
-                    if (qr) {
-                        if (!connectionType) {
-                            console.log(colorText(botTexts.not_connected, '#e0e031'))
-                            connectionType = await askQuestion(botTexts.input_connection_method)
+    if (!receivedPendingNotifications) {
+        if (qr) {
+            console.log(colorText(botTexts.not_connected, '#e0e031'))
+            connectionQr(qr)
+        } 
+        else if (connection === 'connecting') {
+            console.log(colorText(botTexts.connecting))
+        } 
+        else if (connection === 'close') {
+            const shouldReconnect = await connectionClose(connectionState)
+            if (shouldReconnect) {
+                scheduleReconnect()
+            }
+        }
+    } 
+    else {
+        console.log('✅ Conexão estabelecida! Inicializando bot...')
+        reconnectAttempts = 0
+        isReconnecting = false
 
-                            if (connectionType == '2') {
-                                await connectionPairingCode(client) 
-                            } else {
-                                connectionQr(qr)
-                            }
-                        } else if (connectionType != '2') {
-                            connectionQr(qr) 
-                        }
-                    } else if (connection == 'connecting'){
-                        console.log(colorText(botTexts.connecting))
-                    } else if (connection === 'close'){
-                        const shouldReconnect = await connectionClose(connectionState)
-                        
-                        if (shouldReconnect) {
-                            scheduleReconnect()
-                        }
-                    }
-                } else {
-                    console.log('✅ Conexão estabelecida! Inicializando bot...')
-                    reconnectAttempts = 0
-                    isReconnecting = false
-                    
-                    await connectionOpen(client)
+        await connectionOpen(client)
                     
                     try {
                         const groups = await client.groupFetchAllParticipating()
