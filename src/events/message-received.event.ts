@@ -7,6 +7,7 @@ import { handleGroupMessage, handlePrivateMessage } from '../helpers/message.han
 import { GroupController } from '../controllers/group.controller.js'
 import { storeMessageOnCache, formatWAMessage } from '../utils/whatsapp.util.js'
 import { commandInvoker } from '../helpers/command.invoker.helper.js'
+import { updateGroupMetadataCache } from '../socket.js'
 
 export async function messageReceived (client: WASocket, messages : {messages: WAMessage[], requestId?: string, type: MessageUpsertType}, botInfo : Bot, messageCache: NodeCache){
     try{
@@ -32,6 +33,8 @@ export async function messageReceived (client: WASocket, messages : {messages: W
                             const groupMetadata = await client.groupMetadata(idChat)
                             await groupController.registerGroup(groupMetadata)
                             group = await groupController.getGroup(idChat)
+                            // ✅ Baileys v7: Atualizar cache de metadados
+                            updateGroupMetadataCache(idChat, groupMetadata)
                             console.log(`✅ Grupo registrado automaticamente: ${groupMetadata.subject}`)
                         } catch (error: any) {
                             console.error(`⚠️ Erro ao registrar grupo ${idChat}:`, error?.message || error)

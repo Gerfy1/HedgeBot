@@ -4,6 +4,7 @@ import { buildText, showConsoleError, colorText } from '../utils/general.util.js
 import { GroupController } from '../controllers/group.controller.js'
 import botTexts from '../helpers/bot.texts.helper.js'
 import * as waUtil from '../utils/whatsapp.util.js'
+import { updateGroupMetadataCache } from '../socket.js'
 
 export async function syncGroupsOnStart(client: WASocket){
     try{
@@ -12,6 +13,12 @@ export async function syncGroupsOnStart(client: WASocket){
         if (groupsMetadata.length){
             let groupController = new GroupController()
             await groupController.syncGroups(groupsMetadata)
+            
+            // ✅ Baileys v7: Atualizar cache de metadados de grupos
+            for (const metadata of groupsMetadata) {
+                updateGroupMetadataCache(metadata.id, metadata)
+            }
+            
             await syncResources(client)
             console.log(colorText(botTexts.groups_loaded))
         }

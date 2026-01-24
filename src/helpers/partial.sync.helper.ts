@@ -2,6 +2,7 @@ import { WASocket } from 'baileys'
 import { GroupController } from '../controllers/group.controller.js'
 import { showConsoleError, colorText } from '../utils/general.util.js'
 import botTexts from './bot.texts.helper.js'
+import { updateGroupMetadataCache } from '../socket.js'
 
 /**
  * Realiza uma sincronização parcial e otimizada de grupos
@@ -24,6 +25,8 @@ export async function partialSyncGroups(client: WASocket, fetchedGroups: any) {
             await Promise.all(batch.map(async (group: any) => {
                 // Registra ou atualiza o grupo no banco de dados
                 await groupController.registerGroup(group)
+                // ✅ Baileys v7: Atualizar cache de metadados de grupos
+                updateGroupMetadataCache(group.id, group)
             }))
             
             // Pequena pausa entre lotes para não sobrecarregar

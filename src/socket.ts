@@ -17,60 +17,55 @@ import { Boom } from '@hapi/boom'
 import pino from 'pino'
 import fs from 'fs'
 
+// ✅ Cache de metadados de grupos para evitar rate limit (Baileys v7+)
+const groupMetadataCache = new NodeCache({ stdTTL: 600, checkperiod: 120 })
+
 function configSocket(state: any, retryCache: any, version: any, messagesCache: any): any {
-    const browserInfo: [string, string, string] = ['HedgeBot-Server', 'Chrome', '120.0.0.0']
-    
     return {
         auth: state,
-        version: [2, 3000, 1029393272],
+        version,
         
-        // ✅ CONFIGURAÇÕES DE CONECTIVIDADE PARA ORACLE CLOUD
-        connectTimeoutMs: 120000,
-        defaultQueryTimeoutMs: 600002,
-        keepAliveIntervalMs: 45000,
-        retryRequestDelayMs: 3000,
-        maxMsgRetryCount: 2,
+        // ✅ TIMEOUTS ADEQUADOS (valores em ms)
+        connectTimeoutMs: 60000,        // 60s para conectar
+        defaultQueryTimeoutMs: 60000,   // 60s para queries (NÃO 10 minutos!)
+        keepAliveIntervalMs: 30000,     // 30s keepalive
+        retryRequestDelayMs: 2500,      // 2.5s entre retries
+        
+        // ✅ Baileys v7: Cache de metadados de grupos para evitar rate limit
+        cachedGroupMetadata: async (jid: string) => groupMetadataCache.get(jid),
+        
+        // ✅ getMessage OBRIGATÓRIO para reenvio de mensagens
+        getMessage: async (key: any) => {
+            if (key.id) {
+                const msg = messagesCache.get(key.id)
+                return msg?.message || undefined
+            }
+            return undefined
+        },
         
         // ✅ REDUZIR CARGA DE REDE
         shouldSyncHistoryMessage: () => false,
         shouldIgnoreJid: (jid: string | undefined) => {
-            if (!jid) return false;
-            return jid.includes('broadcast') || jid.includes('status');
+            if (!jid) return false
+            return jid.includes('broadcast') || jid.includes('status')
         },
         
-        // ✅ CONFIGURAÇÕES DE BROWSER CORRIGIDAS
-        browser: browserInfo,
-        
         // ✅ LOGGING MÍNIMO
-        logger: pino({ 
-            level: 'error',
-            transport: {
-                target: 'pino-pretty',
-                options: {
-                    colorize: false,
-                    translateTime: true,
-                    ignore: 'pid,hostname'
-                }
-            }
-        }),
-        msgRetryCounterCache: retryCache,
-        msgRetryCounterMap: messagesCache,
-        markOnlineOnConnect: false,
-        syncFullHistory: false,
-        generateHighQualityLinkPreview: false,
-        linkPreviewImageThumbnailWidth: 128,
-        firewall: false,
-        emitOwnEvents: false,
-        qrTimeout: 60000,
-        reportConnectionTimeouts: false,
+        logger: pino({ level: 'silent' }),
         
-        options: {
-            chats: {
-                limit: 100
-            }
-        }
+        // ✅ Configurações de retry
+        msgRetryCounterCache: retryCache,
+        
+        // ✅ Configurações estáveis
+        markOnlineOnConnect: false,     // Não marcar online (recebe notificações no celular)
+        syncFullHistory: false,         // Não sincronizar histórico completo
+        generateHighQualityLinkPreview: false,
+        qrTimeout: 60000,
+        
+        // ✅ Baileys v7: printQRInTerminal removido (usar evento qr)
     } as any
 }
+
 
 //Cache de tentativa de envios  
 const retryCache = new NodeCache({ stdTTL: 300, checkperiod: 60 })
@@ -79,10 +74,19 @@ const eventsCache = new NodeCache({ stdTTL: 600, checkperiod: 120 })
 //Cache de mensagens para serem reenviadas em caso de falha
 const messagesCache = new NodeCache({ stdTTL: 300, useClones: false, checkperiod: 60 })
 
-// ✅ SISTEMA DE RECONEXÃO INTELIGENTE PARA ORACLE CLOUD
+// ✅ Baileys v7: Exporta função para atualizar cache de grupos
+export function updateGroupMetadataCache(jid: string, metadata: any) {
+    groupMetadataCache.set(jid, metadata)
+}
+
+export function getGroupMetadataFromCache(jid: string) {
+    return groupMetadataCache.get(jid)
+}
+
+// ✅ SISTEMA DE RECONEXÃO INFINITA
 let reconnectAttempts = 0
-const MAX_RECONNECT_ATTEMPTS = 3
-const RECONNECT_DELAYS = [5000, 15000, 60000]
+// Delays progressivos: 3s, 5s, 10s, 15s, 30s, 1min, 2min, 5min (depois fica em 5min)
+const RECONNECT_DELAYS = [3000, 5000, 10000, 15000, 30000, 60000, 120000, 300000]
 let isReconnecting = false
 let lastDisconnectTime = 0
 
@@ -95,15 +99,16 @@ const messageTimestamps: number[] = []
 // ✅ DEBOUNCE PARA MENSAGENS
 const messageProcessingQueue = new Map()
 
-// ✅ GARBAGE COLLECTION AGRESSIVO
+// ✅ GARBAGE COLLECTION (sem limpar caches críticos)
 function forceGarbageCollection() {
     if (global.gc) {
         global.gc()
         console.log('🧹 Garbage collection executado')
     }
     
-    retryCache.flushAll()
-    if (messageQueue.size > 20) {
+    // ⚠️ NÃO limpar retryCache - necessário para reconexões!
+    
+    if (messageQueue.size > 50) {
         messageQueue.clear()
     }
     
@@ -113,13 +118,14 @@ function forceGarbageCollection() {
     }
 }
 
-// ✅ FUNÇÃO DE RECONEXÃO OTIMIZADA - CORRIGIDA PARA ES6
+// ✅ FUNÇÃO DE RECONEXÃO INFINITA
 async function scheduleReconnect(fastReconnect = false) {
     const now = Date.now()
     
-    if (now - lastDisconnectTime < 10000) {
-        console.log('⏳ Aguardando 10s antes de reconectar...')
-        setTimeout(() => scheduleReconnect(fastReconnect), 10000)
+    // Evitar reconexões muito rápidas
+    if (now - lastDisconnectTime < 5000) {
+        console.log('⏳ Aguardando 5s antes de reconectar...')
+        setTimeout(() => scheduleReconnect(fastReconnect), 5000)
         return
     }
     
@@ -129,38 +135,18 @@ async function scheduleReconnect(fastReconnect = false) {
         console.log('⏳ Reconexão já em andamento...')
         return
     }
-
-    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-        console.log(`❌ Máximo de tentativas atingido. Limpando sessão e reiniciando...`)
-        
-        // ✅ USAR fs IMPORTADO AO INVÉS DE require
-        try {
-            if (fs.existsSync('./storage/session.db')) {
-                fs.unlinkSync('./storage/session.db')
-            }
-            if (fs.existsSync('./baileys_auth_info')) {
-                fs.rmSync('./baileys_auth_info', { recursive: true, force: true })
-            }
-            console.log('🗑️ Sessão limpa automaticamente')
-        } catch (error: any) {
-            console.log('⚠️ Erro ao limpar sessão:', error?.message || error)
-        }
-        
-        reconnectAttempts = 0
-        setTimeout(() => {
-            console.log('🔄 Reiniciando processo...')
-            process.exit(1)
-        }, 5000)
-        return
-    }
     
     isReconnecting = true
     
-    const delay = RECONNECT_DELAYS[reconnectAttempts] || 60000
+    // Pega o delay baseado na tentativa, máximo é o último valor do array (5 min)
+    const delay = RECONNECT_DELAYS[Math.min(reconnectAttempts, RECONNECT_DELAYS.length - 1)]
     
-    console.log(`🔄 Reconectando em ${delay/1000}s (${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`)
+    console.log(`🔄 Reconectando em ${delay/1000}s (tentativa ${reconnectAttempts + 1})`)
     
-    forceGarbageCollection()
+    // GC a cada 10 tentativas para liberar memória
+    if (reconnectAttempts % 10 === 0) {
+        forceGarbageCollection()
+    }
     
     setTimeout(() => {
         reconnectAttempts++
@@ -176,36 +162,41 @@ export default async function connect(){
         const { version } = await fetchLatestBaileysVersion()
         const client : WASocket = makeWASocket(configSocket(state, retryCache, version, messagesCache))
         let isBotReady = false
+        let isInitializing = false  // ✅ Flag para evitar inicialização duplicada
         eventsCache.set("events", [])
 
         client.ev.process(async(events)=>{
             const botInfo = new BotController().getBot()
 
             if (events['connection.update']) {
-    const connectionState = events['connection.update']
-    const { connection, qr, receivedPendingNotifications } = connectionState
+                const connectionState = events['connection.update']
+                const { connection, qr, receivedPendingNotifications } = connectionState
 
-    if (!receivedPendingNotifications) {
-        if (qr) {
-            console.log(colorText(botTexts.not_connected, '#e0e031'))
-            connectionQr(qr)
-        } 
-        else if (connection === 'connecting') {
-            console.log(colorText(botTexts.connecting))
-        } 
-        else if (connection === 'close') {
-            const shouldReconnect = await connectionClose(connectionState)
-            if (shouldReconnect) {
-                scheduleReconnect()
-            }
-        }
-    } 
-    else {
-        console.log('✅ Conexão estabelecida! Inicializando bot...')
-        reconnectAttempts = 0
-        isReconnecting = false
+                // ✅ Tratar QR e estados de conexão
+                if (qr) {
+                    console.log(colorText(botTexts.not_connected, '#e0e031'))
+                    connectionQr(qr)
+                } 
+                else if (connection === 'connecting') {
+                    console.log(colorText(botTexts.connecting))
+                } 
+                else if (connection === 'close') {
+                    // ✅ Reset flags ao desconectar
+                    isBotReady = false
+                    isInitializing = false
+                    const shouldReconnect = await connectionClose(connectionState)
+                    if (shouldReconnect) {
+                        scheduleReconnect()
+                    }
+                }
+                // ✅ Conexão aberta com sucesso - APENAS se não estiver já inicializando
+                else if ((connection === 'open' || receivedPendingNotifications) && !isInitializing && !isBotReady) {
+                    isInitializing = true  // ✅ Marcar que está inicializando
+                    console.log('✅ Conexão estabelecida! Inicializando bot...')
+                    reconnectAttempts = 0
+                    isReconnecting = false
 
-        await connectionOpen(client)
+                    await connectionOpen(client)
                     
                     try {
                         const groups = await client.groupFetchAllParticipating()
@@ -229,6 +220,7 @@ export default async function connect(){
                     }
                     
                     isBotReady = true
+                    isInitializing = false  // ✅ Finalizado
                     await executeEventQueue(client, eventsCache)
                     console.log(colorText(botTexts.server_started))
                 }
@@ -241,6 +233,20 @@ export default async function connect(){
             if (events['lid-mapping.update']){
                 const lidMapping = events['lid-mapping.update']
                 console.log('🆔 Novo mapeamento LID/PN recebido:', Object.keys(lidMapping).length, 'entradas')
+                
+                // ✅ Baileys v7: Armazenar mapeamentos LID/PN automaticamente
+                try {
+                    const store = client.signalRepository?.lidMapping
+                    if (store && typeof store.storeLIDPNMappings === 'function') {
+                        const mappings = Object.entries(lidMapping).map(([pn, lid]) => ({ pn, lid: lid as string }))
+                        if (mappings.length > 0) {
+                            await store.storeLIDPNMappings(mappings)
+                            console.log('✅ Mapeamentos LID/PN armazenados')
+                        }
+                    }
+                } catch (error: any) {
+                    console.log('⚠️ Erro ao armazenar mapeamento LID/PN:', error?.message || error)
+                }
             }
 
             if (events['messages.upsert'] && isBotReady){
